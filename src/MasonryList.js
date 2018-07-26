@@ -50,6 +50,7 @@ export type Props = {
   getHeightForItem: ({ item: any, index: number }) => number,
   ListHeaderComponent?: ?React.ComponentType<any>,
   ListEmptyComponent?: ?React.ComponentType<any>,
+  ListFooterComponent?: ?React.ComponentType<any>,
   /**
    * Used to extract a unique key for a given item at the specified index. Key is used for caching
    * and as the react key to track item re-ordering. The default extractor checks `item.key`, then
@@ -76,6 +77,9 @@ export type Props = {
    * sure to also set the `refreshing` prop correctly.
    */
   onRefresh?: ?Function,
+  wrapperStyle?: Object,
+  columnWrapperStyle?: any,
+  verticalSeparatorWidth?: number,
 };
 type State = {
   columns: Array<Column>,
@@ -114,12 +118,15 @@ export default class MasonryList extends React.Component<Props, State> {
       }
       return <ScrollView {...props} />;
     },
+    verticalSeparatorWidth: 0,
+    wrapperStyle: {},
+    columnWrapperStyle: {},
   };
 
   state = _stateFromProps(this.props);
   _listRefs: Array<?VirtualizedList> = [];
   _scrollRef: ?ScrollView;
-  _endsReached = 0;
+  _endsReached = false;
 
   componentWillReceiveProps(newProps: Props) {
     this.setState(_stateFromProps(newProps));
@@ -152,6 +159,7 @@ export default class MasonryList extends React.Component<Props, State> {
   };
 
   _onContentSizeChange = (width, height) => {
+    this._endReached = false;
     this._listRefs.forEach(
       list =>
         list &&
@@ -197,6 +205,16 @@ export default class MasonryList extends React.Component<Props, State> {
     );
   };
 
+  _onEndReached = event => {
+    if (this._endReached) {
+      return;
+    }
+    this._endReached = true;
+    if (this.props.onEndReached) {
+      this.props.onEndReached(event);
+    }
+  };
+
   _getItemLayout = (columnIndex, rowIndex) => {
     const column = this.state.columns[columnIndex];
     let offset = 0;
@@ -206,7 +224,18 @@ export default class MasonryList extends React.Component<Props, State> {
     return { length: column.heights[rowIndex], offset, index: rowIndex };
   };
 
-  _renderScrollComponent = () => <FakeScrollView style={styles.column} />;
+  _renderScrollComponent = columnIndex => {
+    const { verticalSeparatorWidth, columnWrapperStyle } = this.props;
+    return (
+      <FakeScrollView
+        style={[
+          styles.column,
+          { marginLeft: (columnIndex > 0) ? verticalSeparatorWidth : 0 },
+          (typeof columnWrapperStyle === 'function') ? columnWrapperStyle(columnIndex) : columnWrapperStyle
+        ]}
+      />
+    );
+  };
 
   _getItemCount = data => data.length;
 
@@ -219,8 +248,10 @@ export default class MasonryList extends React.Component<Props, State> {
       renderItem,
       ListHeaderComponent,
       ListEmptyComponent,
+      ListFooterComponent,
       keyExtractor,
       onEndReached,
+      wrapperStyle,
       ...props
     } = this.props;
     let headerElement;
@@ -230,6 +261,10 @@ export default class MasonryList extends React.Component<Props, State> {
     let emptyElement;
     if (ListEmptyComponent) {
       emptyElement = <ListEmptyComponent />;
+    }
+    let footerElement;
+    if (ListFooterComponent) {
+      footerElement = <ListFooterComponent />;
     }
 
     const content = (
@@ -246,9 +281,9 @@ export default class MasonryList extends React.Component<Props, State> {
               this._getItemLayout(col.index, index)}
             renderItem={({ item, index }) =>
               renderItem({ item, index, column: col.index })}
-            renderScrollComponent={this._renderScrollComponent}
+            renderScrollComponent={() => this._renderScrollComponent(col.index)}
             keyExtractor={keyExtractor}
-            onEndReached={onEndReached}
+            onEndReached={this._onEndReached}
             onEndReachedThreshold={this.props.onEndReachedThreshold}
             removeClippedSubviews={false}
           />,
@@ -270,6 +305,7 @@ export default class MasonryList extends React.Component<Props, State> {
       },
       headerElement,
       emptyElement && this.props.data.length === 0 ? emptyElement : content,
+      footerElement,
     );
 
     return scrollComponent;
